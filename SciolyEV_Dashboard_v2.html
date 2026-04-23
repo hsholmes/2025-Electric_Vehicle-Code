@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SciolyEV Control</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+:root {
+  --bg:       #0a0a0f;
+  --surface:  #111118;
+  --border:   #1e1e2e;
+  --accent:   #7aa2f7;
+  --green:    #9ece6a;
+  --red:      #f7768e;
+  --orange:   #ff9e64;
+  --yellow:   #e0af68;
+  --cyan:     #7dcfff;
+  --text:     #c0caf5;
+  --dim:      #414868;
+  --sent:     #bb9af7;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Subtle scanline effect */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.08) 2px,
+    rgba(0,0,0,0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ── Header ── */
+header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.logo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+}
+
+.logo span { color: var(--dim); font-weight: 300; }
+
+.header-right { display: flex; align-items: center; gap: 12px; }
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--dim);
+  letter-spacing: 0.1em;
+}
+
+.status-pill.connected { border-color: var(--green); color: var(--green); }
+.status-pill.connecting { border-color: var(--yellow); color: var(--yellow); }
+
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dot.blink { animation: blink 0.9s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+.connect-btn {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  padding: 7px 20px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+
+.connect-btn:hover { background: rgba(122,162,247,0.1); }
+.connect-btn.connected { border-color: var(--red); color: var(--red); }
+.connect-btn.connected:hover { background: rgba(247,118,142,0.1); }
+
+/* ── Left Panel: Telemetry ── */
+.left-panel {
+  border-right: 1px solid var(--border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.section-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* Heading display */
+.heading-widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+
+.heading-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.compass-wrap { position: relative; width: 72px; height: 72px; flex-shrink: 0; }
+.compass-wrap svg { width: 100%; height: 100%; }
+#needle { transform-origin: 36px 36px; transition: transform 0.25s ease; }
+
+.heading-text { flex: 1; }
+.heading-deg {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 2.4rem;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--text);
+}
+
+.heading-deg.warn { color: var(--red); }
+.heading-label { font-size: 0.72rem; color: var(--dim); margin-top: 4px; }
+
+/* Metric card */
+.metric {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.metric-label { font-size: 0.7rem; color: var(--dim); font-family: 'IBM Plex Mono', monospace; }
+.metric-value { font-family: 'IBM Plex Mono', monospace; font-size: 1.1rem; color: var(--text); }
+.metric-unit  { font-size: 0.68rem; color: var(--dim); margin-left: 4px; }
+
+/* Speed bars */
+.speed-widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 14px;
+}
+
+.speed-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.speed-row:last-child { margin-bottom: 0; }
+.speed-side { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: var(--dim); width: 14px; }
+.speed-track { flex: 1; height: 5px; background: var(--border); overflow: hidden; }
+.speed-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
+.speed-fill.right { background: var(--orange); }
+.speed-num { font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--text); width: 50px; text-align: right; }
+
+/* Progress bar */
+.progress-widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 14px;
+}
+
+.progress-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.progress-track { height: 6px; background: var(--border); overflow: hidden; }
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--cyan));
+  width: 0%;
+  transition: width 0.3s;
+}
+
+.progress-vals {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--dim);
+}
+
+/* ── Right Panel: Tuning ── */
+.right-panel {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+/* Param card */
+.param-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 18px;
+}
+
+.param-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.param-row { display: flex; flex-direction: column; gap: 6px; }
+
+.param-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.param-input-wrap { display: flex; gap: 6px; align-items: center; }
+
+.param-input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.95rem;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+
+.param-input:focus { border-color: var(--accent); }
+
+.send-btn {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--dim);
+  color: var(--dim);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.send-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.send-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.send-btn.sent { border-color: var(--green); color: var(--green); }
+
+/* Slider */
+.slider-wrap { display: flex; flex-direction: column; gap: 4px; }
+
+.slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  outline: none;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.slider::-webkit-slider-thumb:hover { background: var(--cyan); }
+
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.62rem;
+  color: var(--dim);
+}
+
+/* Send all button */
+.send-all-btn {
+  width: 100%;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.send-all-btn:hover:not(:disabled) { background: rgba(122,162,247,0.08); }
+.send-all-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Log */
+.log-widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+  max-height: 200px;
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  line-height: 1.9;
+}
+
+.log-body::-webkit-scrollbar { width: 3px; }
+.log-body::-webkit-scrollbar-thumb { background: var(--border); }
+
+.log-entry { display: block; }
+.log-entry.info  { color: var(--accent); }
+.log-entry.data  { color: var(--dim); }
+.log-entry.sent  { color: var(--sent); }
+.log-entry.ok    { color: var(--green); }
+.log-entry.warn  { color: var(--orange); }
+.log-entry.stop  { color: var(--red); font-weight: 600; }
+
+.clear-btn {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.clear-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Stop card */
+.stop-card {
+  display: none;
+  background: rgba(247,118,142,0.08);
+  border: 1px solid var(--red);
+  padding: 14px 18px;
+}
+
+.stop-card.visible { display: block; }
+
+.stop-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--red);
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  margin-bottom: 6px;
+}
+
+.stop-detail { font-size: 0.85rem; color: var(--text); }
+
+/* Responsive */
+@media (max-width: 700px) {
+  .layout { grid-template-columns: 1fr; }
+  .left-panel { border-right: none; border-bottom: 1px solid var(--border); }
+  .param-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">SCIOLY_EV <span>// live control</span></div>
+    <div class="header-right">
+      <div class="status-pill" id="statusPill">
+        <div class="dot"></div>
+        <span id="statusText">Disconnected</span>
+      </div>
+      <button class="connect-btn" id="connectBtn" onclick="toggleConnect()">Connect</button>
+    </div>
+  </header>
+
+  <!-- Left: Telemetry -->
+  <div class="left-panel">
+
+    <div>
+      <div class="section-title">Heading Error (Actual − Expected)</div>
+      <div class="heading-widget">
+        <div class="heading-row">
+          <div class="compass-wrap">
+            <svg viewBox="0 0 72 72">
+              <circle cx="36" cy="36" r="34" fill="none" stroke="#1e1e2e" stroke-width="1.5"/>
+              <!-- Zero marker at top -->
+              <line x1="36" y1="4" x2="36" y2="10" stroke="#7aa2f7" stroke-width="1.5"/>
+              <text x="36" y="20" text-anchor="middle" fill="#7aa2f7" font-family="IBM Plex Mono" font-size="6">0°</text>
+              <!-- Left/right markers -->
+              <text x="8"  y="39" text-anchor="middle" fill="#414868" font-family="IBM Plex Mono" font-size="6">L</text>
+              <text x="64" y="39" text-anchor="middle" fill="#414868" font-family="IBM Plex Mono" font-size="6">R</text>
+              <g id="needle">
+                <polygon points="36,10 39,36 36,32 33,36" fill="#9ece6a"/>
+                <polygon points="36,62 39,36 36,40 33,36" fill="#f7768e" opacity="0.7"/>
+                <circle cx="36" cy="36" r="3" fill="#c0caf5"/>
+              </g>
+            </svg>
+          </div>
+          <div class="heading-text">
+            <div class="heading-deg" id="headingDeg">0.0°</div>
+            <div class="heading-label" id="headingLabel">On track</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Motor Speeds</div>
+      <div class="speed-widget">
+        <div class="speed-row">
+          <div class="speed-side">L</div>
+          <div class="speed-track"><div class="speed-fill" id="leftBar"></div></div>
+          <div class="speed-num" id="leftNum">—</div>
+        </div>
+        <div class="speed-row">
+          <div class="speed-side">R</div>
+          <div class="speed-track"><div class="speed-fill right" id="rightBar"></div></div>
+          <div class="speed-num" id="rightNum">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Arc Progress</div>
+      <div class="progress-widget">
+        <div class="progress-header">
+          <span class="metric-label">Distance</span>
+          <span class="metric-label" id="progressPct" style="color:var(--accent)">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-vals">
+          <span id="distNow">0%</span>
+          <span id="distTarget">Arc: 0 / 90°</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <span class="metric-label">Correction</span>
+      <span>
+        <span class="metric-value" id="corrVal">—</span>
+        <span class="metric-unit">st/s</span>
+      </span>
+    </div>
+
+    <div class="stop-card" id="stopCard">
+      <div class="stop-title">— VEHICLE STOPPED —</div>
+      <div class="stop-detail" id="stopDetail"></div>
+    </div>
+
+  </div>
+
+  <!-- Right: Tuning -->
+  <div class="right-panel">
+
+    <div>
+      <div class="section-title">Live Parameter Tuning</div>
+      <div class="param-card">
+        <div class="param-grid">
+
+          <!-- KP -->
+          <div class="param-row">
+            <div class="param-name">KP Heading</div>
+            <div class="slider-wrap">
+              <input type="range" class="slider" id="kpSlider" min="0" max="30" step="0.5" value="0"
+                oninput="syncInput('kp')">
+              <div class="slider-labels"><span>0</span><span>15</span><span>30</span></div>
+            </div>
+            <div class="param-input-wrap">
+              <input type="number" class="param-input" id="kpInput" value="0" step="0.5"
+                oninput="syncSlider('kp')">
+              <button class="send-btn" id="kpBtn" onclick="sendParam('KP','kpInput','kpBtn')" disabled>Send</button>
+            </div>
+          </div>
+
+          <!-- BIAS -->
+          <div class="param-row">
+            <div class="param-name">Bias</div>
+            <div class="slider-wrap">
+              <input type="range" class="slider" id="biasSlider" min="-100" max="100" step="5" value="0"
+                oninput="syncInput('bias')">
+              <div class="slider-labels"><span>-100</span><span>0</span><span>+100</span></div>
+            </div>
+            <div class="param-input-wrap">
+              <input type="number" class="param-input" id="biasInput" value="0" step="5"
+                oninput="syncSlider('bias')">
+              <button class="send-btn" id="biasBtn" onclick="sendParam('BIAS','biasInput','biasBtn')" disabled>Send</button>
+            </div>
+          </div>
+
+          <!-- DIST correction -->
+          <div class="param-row">
+            <div class="param-name">Dist Correction</div>
+            <div class="slider-wrap">
+              <input type="range" class="slider" id="distSlider" min="-500" max="500" step="10" value="0"
+                oninput="syncInput('dist')">
+              <div class="slider-labels"><span>-500</span><span>0</span><span>+500</span></div>
+            </div>
+            <div class="param-input-wrap">
+              <input type="number" class="param-input" id="distInput" value="0" step="10"
+                oninput="syncSlider('dist')">
+              <button class="send-btn" id="distBtn" onclick="sendParam('DIST','distInput','distBtn')" disabled>Send</button>
+            </div>
+          </div>
+
+          <!-- ARC RADIUS -->
+          <div class="param-row">
+            <div class="param-name">Arc Radius</div>
+            <div class="slider-wrap">
+              <input type="range" class="slider" id="radiusSlider" min="100" max="3000" step="50" value="1000"
+                oninput="syncInput('radius')">
+              <div class="slider-labels"><span>100</span><span>1500</span><span>3000</span></div>
+            </div>
+            <div class="param-input-wrap">
+              <input type="number" class="param-input" id="radiusInput" value="1000" step="50"
+                oninput="syncSlider('radius'); updateArcDisplay()">
+              <button class="send-btn" id="radiusBtn" onclick="sendParam('RADIUS','radiusInput','radiusBtn')" disabled>Send</button>
+            </div>
+          </div>
+
+          <!-- ARC ANGLE -->
+          <div class="param-row">
+            <div class="param-name">Arc Angle (deg)</div>
+            <div class="slider-wrap">
+              <input type="range" class="slider" id="angleSlider" min="0" max="360" step="5" value="90"
+                oninput="syncInput('angle')">
+              <div class="slider-labels"><span>0°</span><span>180°</span><span>360°</span></div>
+            </div>
+            <div class="param-input-wrap">
+              <input type="number" class="param-input" id="angleInput" value="90" step="5"
+                oninput="syncSlider('angle'); updateArcDisplay()">
+              <button class="send-btn" id="angleBtn" onclick="sendParam('ANGLE','angleInput','angleBtn')" disabled>Send</button>
+            </div>
+          </div>
+
+          <!-- TIME -->
+          <div class="param-row">
+            <div class="param-name">Target Time (ms)</div>
+            <div class="slider-wrap">
+              <input type="range" class="slider" id="timeSlider" min="2000" max="20000" step="500" value="8000"
+                oninput="syncInput('time')">
+              <div class="slider-labels"><span>2s</span><span>10s</span><span>20s</span></div>
+            </div>
+            <div class="param-input-wrap">
+              <input type="number" class="param-input" id="timeInput" value="8000" step="500"
+                oninput="syncSlider('time'); updateArcDisplay()">
+              <button class="send-btn" id="timeBtn" onclick="sendParam('TIME','timeInput','timeBtn')" disabled>Send</button>
+            </div>
+          </div>
+
+          <!-- Arc preview (computed) -->
+          <div class="param-row">
+            <div class="param-name">Arc Preview</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:0.75rem;margin-top:6px;line-height:2;">
+              <span style="color:var(--dim)">Left arc: </span>
+              <span id="leftArcDisplay" style="color:var(--accent)">—</span>
+              <span style="color:var(--dim)"> mm</span><br>
+              <span style="color:var(--dim)">Right arc: </span>
+              <span id="rightArcDisplay" style="color:var(--orange)">—</span>
+              <span style="color:var(--dim)"> mm</span><br>
+              <span style="color:var(--dim)">L speed: </span>
+              <span id="leftSpeedDisplay" style="color:var(--cyan)">—</span>
+              <span style="color:var(--dim)"> st/s</span>
+            </div>
+          </div>
+
+          <!-- Target distance display -->
+          <div class="param-row">
+            <div class="param-name">Dist Correction</div>
+            <div style="color:var(--dim);font-family:'IBM Plex Mono',monospace;font-size:0.8rem;margin-top:6px;">
+              correction: <span id="distCorrDisplay" style="color:var(--accent)">0</span> mm
+            </div>
+            <div style="color:var(--dim);font-size:0.7rem;margin-top:4px;">
+              + = go further &nbsp; − = stop sooner
+            </div>
+          </div>
+
+        </div>
+
+        <button class="send-all-btn" id="sendAllBtn" onclick="sendAll()" disabled style="margin-top:16px">
+          ↑ Send All Parameters
+        </button>
+      </div>
+    </div>
+
+    <!-- Reset + Quick presets -->
+    <div>
+      <div class="section-title">Vehicle Control</div>
+      <!-- Reset button - prominent, separate from presets -->
+      <button id="resetBtn" onclick="resetVehicle()" disabled style="
+        width: 100%;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.85rem;
+        font-weight: 600;
+        letter-spacing: 0.15em;
+        padding: 13px;
+        background: transparent;
+        border: 1px solid var(--red);
+        color: var(--red);
+        cursor: pointer;
+        transition: all 0.15s;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      " onmouseover="if(!this.disabled)this.style.background='rgba(247,118,142,0.08)'"
+         onmouseout="this.style.background='transparent'">
+        ↺ Reset &amp; Send New Parameters
+      </button>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--dim);margin-bottom:12px;">
+        Stops vehicle → sends current params → waits for button press on vehicle
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">Quick Presets</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="send-btn" style="padding:8px 14px" onclick="applyPreset(0,0,0)" disabled id="preset0">
+          Params Zero
+        </button>
+        <button class="send-btn" style="padding:8px 14px" onclick="applyPreset(5,0,0)" disabled id="preset1">
+          KP=5 Start
+        </button>
+        <button class="send-btn" style="padding:8px 14px" onclick="applyPreset(10,0,0)" disabled id="preset2">
+          KP=10 Aggressive
+        </button>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="section-title" style="margin-bottom:0">Log</div>
+    <div class="log-widget">
+      <div class="log-header">
+        <span class="metric-label">Raw Messages</span>
+        <button class="clear-btn" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="log-body" id="logBody"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ============================================================
+// BLE UUIDs - must match Arduino exactly
+// ============================================================
+const SERVICE_UUID = '19b10000-e8f2-537e-4f6c-d104768a1214';
+const STATUS_CHAR  = '19b10001-e8f2-537e-4f6c-d104768a1214'; // notify (receive)
+const CMD_CHAR     = '19b10002-e8f2-537e-4f6c-d104768a1214'; // write  (send)
+
+let device    = null;
+let cmdChar   = null;
+let connected = false;
+
+// ============================================================
+// Slider <-> Input sync
+// ============================================================
+const maps = {
+  kp:     { slider: 'kpSlider',     input: 'kpInput'     },
+  bias:   { slider: 'biasSlider',   input: 'biasInput'   },
+  dist:   { slider: 'distSlider',   input: 'distInput'   },
+  radius: { slider: 'radiusSlider', input: 'radiusInput' },
+  angle:  { slider: 'angleSlider',  input: 'angleInput'  },
+  time:   { slider: 'timeSlider',   input: 'timeInput'   },
+};
+
+function syncInput(key) {
+  document.getElementById(maps[key].input).value = document.getElementById(maps[key].slider).value;
+  if (key === 'dist') updateDistDisplay();
+  if (key === 'radius' || key === 'angle' || key === 'time') updateArcDisplay();
+}
+
+function syncSlider(key) {
+  const v = parseFloat(document.getElementById(maps[key].input).value) || 0;
+  document.getElementById(maps[key].slider).value = v;
+  if (key === 'dist') updateDistDisplay();
+  if (key === 'radius' || key === 'angle' || key === 'time') updateArcDisplay();
+}
+
+function updateDistDisplay() {
+  const c = parseFloat(document.getElementById('distInput').value) || 0;
+  document.getElementById('distCorrDisplay').textContent = (c >= 0 ? '+' : '') + c;
+}
+
+// Recompute and display arc preview - must match Arduino math exactly
+function updateArcDisplay() {
+  const R      = parseFloat(document.getElementById('radiusInput').value) || 0;
+  const angDeg = parseFloat(document.getElementById('angleInput').value)  || 0;
+  const T      = (parseFloat(document.getElementById('timeInput').value) || 8000) / 1000.0;
+  const W      = 150.0; // TRACK_WIDTH_MM - keep in sync with Arduino
+  const angRad = angDeg * Math.PI / 180;
+
+  // Right turn: left = outer wheel, right = inner wheel
+  const leftArc  = (R + W / 2) * angRad;
+  const rightArc = (R - W / 2) * angRad;
+  const mmRev    = Math.PI * 76.2;
+  const lSteps   = Math.round(leftArc  / mmRev * 200 * 8);
+  const rSteps   = Math.round(rightArc / mmRev * 200 * 8);
+  const lSpeed   = (lSteps / T).toFixed(0);
+  const rSpeed   = (rSteps / T).toFixed(0);
+
+  document.getElementById('leftArcDisplay').textContent   = leftArc.toFixed(0);
+  document.getElementById('rightArcDisplay').textContent  = rightArc.toFixed(0);
+  document.getElementById('leftSpeedDisplay').textContent = `${lSpeed} / ${rSpeed}`;
+  document.getElementById('distTarget').textContent       = `Arc: 0 / ${angDeg}°`;
+}
+
+// ============================================================
+// BLE connection
+// ============================================================
+async function toggleConnect() {
+  if (connected) { device?.gatt?.disconnect(); return; }
+  if (!navigator.bluetooth) {
+    alert('Web Bluetooth is not supported.\nPlease use Google Chrome.');
+    return;
+  }
+  try {
+    setStatus('connecting', 'Scanning...');
+    log('Scanning for SciolyEV...', 'info');
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'SciolyEV' }],
+      optionalServices: [SERVICE_UUID]
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    const server  = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+
+    // Subscribe to telemetry notifications
+    const statusCharHandle = await service.getCharacteristic(STATUS_CHAR);
+    await statusCharHandle.startNotifications();
+    statusCharHandle.addEventListener('characteristicvaluechanged', onData);
+
+    // Get writable command handle
+    cmdChar = await service.getCharacteristic(CMD_CHAR);
+    onConnected();
+  } catch (e) {
+    setStatus('disconnected', 'Disconnected');
+    log('Error: ' + e.message, 'warn');
+  }
+}
+
+function onConnected() {
+  connected = true;
+  setStatus('connected', 'Connected to SciolyEV');
+  document.getElementById('connectBtn').textContent = 'Disconnect';
+  document.getElementById('connectBtn').classList.add('connected');
+  log('Connected! Ready to receive data and send commands.', 'ok');
+  setButtonsEnabled(true);
+}
+
+function onDisconnected() {
+  connected = false; cmdChar = null;
+  setStatus('disconnected', 'Disconnected');
+  document.getElementById('connectBtn').textContent = 'Connect';
+  document.getElementById('connectBtn').classList.remove('connected');
+  log('Disconnected.', 'warn');
+  setButtonsEnabled(false);
+}
+
+function setButtonsEnabled(en) {
+  ['kpBtn','biasBtn','distBtn','radiusBtn','angleBtn','timeBtn',
+   'sendAllBtn','preset0','preset1','preset2','resetBtn']
+    .forEach(id => document.getElementById(id).disabled = !en);
+}
+
+// ============================================================
+// Reset: send all params then RESET command
+// Arduino stops, recalculates arc, waits for button
+// ============================================================
+async function resetVehicle() {
+  if (!cmdChar) return;
+  const btn = document.getElementById('resetBtn');
+  btn.textContent = '↺ Sending...';
+  btn.disabled = true;
+
+  // Send every parameter with a small gap between each write
+  const gap = () => new Promise(r => setTimeout(r, 80));
+  await sendParam('KP',     'kpInput',     'kpBtn');     await gap();
+  await sendParam('BIAS',   'biasInput',   'biasBtn');   await gap();
+  await sendParam('DIST',   'distInput',   'distBtn');   await gap();
+  await sendParam('RADIUS', 'radiusInput', 'radiusBtn'); await gap();
+  await sendParam('ANGLE',  'angleInput',  'angleBtn');  await gap();
+  await sendParam('TIME',   'timeInput',   'timeBtn');   await gap();
+
+  // RESET command triggers Arduino to stop and wait for button
+  try {
+    await cmdChar.writeValue(new TextEncoder().encode('RESET:1'));
+    log('→ RESET sent. Press button on vehicle to run with new params.', 'ok');
+  } catch(e) {
+    log('Reset failed: ' + e.message, 'warn');
+  }
+
+  // Clear stop banner and progress bar
+  document.getElementById('stopCard').classList.remove('visible');
+  document.getElementById('stopDetail').textContent = '';
+  updateDistance(0);
+
+  btn.textContent = '↺ Reset & Send New Parameters';
+  btn.disabled = false;
+}
+
+// ============================================================
+// Receive telemetry from Arduino
+// Format: "H:X L:X R:X C:X D:X"
+// ============================================================
+function onData(e) {
+  const raw = new TextDecoder().decode(e.target.value);
+  log(raw, 'data');
+
+  if (raw.startsWith('STATUS:')) {
+    setStatus('connected', 'Connected — ' + raw.replace('STATUS:', ''));
+    return;
+  }
+  if (raw.startsWith('STOP:')) {
+    document.getElementById('stopCard').classList.add('visible');
+    document.getElementById('stopDetail').textContent = raw.replace('STOP:', '');
+    log(raw, 'stop');
+    // Update status pill so it no longer shows "Running arc"
+    setStatus('connected', 'Connected — Stopped');
+    return;
+  }
+
+  // Parse key:value pairs
+  const f = {};
+  raw.split(' ').forEach(tok => {
+    const [k, v] = tok.split(':');
+    if (k && v !== undefined) f[k] = parseFloat(v);
+  });
+
+  if (f.H !== undefined) updateHeading(f.H);
+  if (f.L !== undefined && f.R !== undefined) updateSpeeds(f.L, f.R);
+  if (f.C !== undefined) document.getElementById('corrVal').textContent = f.C.toFixed(1);
+  if (f.D !== undefined) updateDistance(f.D);
+}
+
+function updateHeading(h) {
+  // h = heading error (actual gyro - expected arc angle)
+  // +  = turned too little (under-turning)
+  // -  = turned too much  (over-turning)
+  document.getElementById('needle').style.transform = `rotate(${h * 3}deg)`; // 3x amplification for visibility
+  const el = document.getElementById('headingDeg');
+  el.textContent = (h >= 0 ? '+' : '') + h.toFixed(1) + '°';
+  el.className = 'heading-deg' + (Math.abs(h) > 5 ? ' warn' : '');
+  document.getElementById('headingLabel').textContent =
+    Math.abs(h) < 1.0 ? 'On track' :
+    h > 0 ? `Behind ${h.toFixed(1)}° (under-turning)` :
+             `Ahead ${Math.abs(h).toFixed(1)}° (over-turning)`;
+}
+
+function updateSpeeds(l, r) {
+  const max = 10000; // Max steps/sec for bar scaling
+  document.getElementById('leftBar').style.width  = Math.min(l / max * 100, 100) + '%';
+  document.getElementById('rightBar').style.width = Math.min(r / max * 100, 100) + '%';
+  document.getElementById('leftNum').textContent  = Math.round(l);
+  document.getElementById('rightNum').textContent = Math.round(r);
+}
+
+function updateDistance(d) {
+  // d = arcProgress * 70 (sent from Arduino)
+  // arcProgress = d / 70 (0-100%)
+  const arcPct   = Math.min(d / 70.0, 100);
+  const angTotal = parseFloat(document.getElementById('angleInput').value) || 90;
+  const arcDeg   = (arcPct / 100.0 * angTotal).toFixed(1);
+  document.getElementById('progressFill').style.width = arcPct + '%';
+  document.getElementById('progressPct').textContent  = arcPct.toFixed(0) + '%';
+  document.getElementById('distNow').textContent      = arcPct.toFixed(0) + '%';
+  document.getElementById('distTarget').textContent   = `Arc: ${arcDeg} / ${angTotal}°`;
+}
+
+// ============================================================
+// Send single parameter to Arduino
+// ============================================================
+async function sendParam(key, inputId, btnId) {
+  if (!cmdChar) return;
+  const val = parseFloat(document.getElementById(inputId).value);
+  if (isNaN(val)) return;
+  const cmd = `${key}:${val.toFixed(2)}`;
+  const btn = document.getElementById(btnId);
+  try {
+    await cmdChar.writeValue(new TextEncoder().encode(cmd));
+    log('→ Sent: ' + cmd, 'sent');
+    btn.textContent = 'Sent!';
+    btn.classList.add('sent');
+    setTimeout(() => { btn.textContent = 'Send'; btn.classList.remove('sent'); }, 1500);
+  } catch(e) {
+    log('Send failed: ' + e.message, 'warn');
+  }
+}
+
+// Send all five parameters at once
+async function sendAll() {
+  if (!cmdChar) return;
+  const gap = () => new Promise(r => setTimeout(r, 80));
+  await sendParam('KP',     'kpInput',     'kpBtn');     await gap();
+  await sendParam('BIAS',   'biasInput',   'biasBtn');   await gap();
+  await sendParam('DIST',   'distInput',   'distBtn');   await gap();
+  await sendParam('RADIUS', 'radiusInput', 'radiusBtn'); await gap();
+  await sendParam('ANGLE',  'angleInput',  'angleBtn');  await gap();
+  await sendParam('TIME',   'timeInput',   'timeBtn');
+  log('→ All parameters sent.', 'ok');
+}
+
+function applyPreset(kp, bias, dist) {
+  document.getElementById('kpInput').value   = kp;
+  document.getElementById('biasInput').value = bias;
+  document.getElementById('distInput').value = dist;
+  syncSlider('kp'); syncSlider('bias'); syncSlider('dist');
+  updateDistDisplay();
+  sendAll();
+}
+
+// ============================================================
+// UI helpers
+// ============================================================
+function setStatus(state, text) {
+  const pill = document.getElementById('statusPill');
+  const dot  = pill.querySelector('.dot');
+  document.getElementById('statusText').textContent = text;
+  pill.className = 'status-pill ' + (state === 'connected' ? 'connected' : state === 'connecting' ? 'connecting' : '');
+  dot.className  = 'dot' + (state === 'connecting' ? ' blink' : '');
+}
+
+function log(msg, type = 'data') {
+  const body = document.getElementById('logBody');
+  const now  = new Date().toLocaleTimeString('en', { hour12: false });
+  const el   = document.createElement('span');
+  el.className = 'log-entry ' + type;
+  el.textContent = `[${now}] ${msg}`;
+  body.appendChild(el);
+  body.appendChild(document.createElement('br'));
+  body.scrollTop = body.scrollHeight;
+}
+
+function clearLog() { document.getElementById('logBody').innerHTML = ''; }
+
+// Init displays on page load
+updateDistDisplay();
+updateArcDisplay();
+</script>
+</body>
+</html>
